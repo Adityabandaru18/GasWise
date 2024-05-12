@@ -1,55 +1,42 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-contract NewsReportingSystem {
-    struct Reporter {
-        string name;
-        string email;
-        string phone;
-        uint[] newsIds;
+contract GasOptimizedNewsDelivery {
+
+    address public immutable provider;
+    address public immutable recipient;
+    uint public deliveryCount;
+    uint public immutable deliveryDelay;
+    uint public immutable compensation;
+    
+    mapping(uint => bytes32) public newsHashes;
+
+    event NewsDelivered(uint indexed deliveryIndex, bytes32 contentHash);
+
+    constructor(address _recipient, uint _deliveryDelay, uint _compensation) {
+        provider = msg.sender;
+        recipient = _recipient;
+        deliveryDelay = _deliveryDelay;
+        compensation = _compensation;
     }
-    struct News {
-        string title;
-        string content;
-        address reporterAddress;
+
+    function deliverNews(bytes32 _contentHash) external {
+        require(msg.sender == provider, "Only provider can deliver news");
+        require(block.timestamp >= deliveryDelay, "Delivery delay not passed");
+        
+        newsHashes[deliveryCount] = _contentHash;
+        deliveryCount++;
+        emit NewsDelivered(deliveryCount, _contentHash);
     }
-    mapping(address => Reporter) reporters;
-    mapping(address => mapping(address => bool)) followingReporters;
-    mapping(address => bool) private isReporter;
-    News[] public newsList;
-    function isReporters(address _address) external view returns (bool) {
-        return isReporter[_address];
+
+    function getNews(uint _deliveryIndex) external view returns (bytes32) {
+        require(_deliveryIndex < deliveryCount, "News not delivered yet");
+        return newsHashes[_deliveryIndex];
     }
-    function becomeReporter(string memory _name, string memory _email, string memory _phone) external {
-        require(!isReporter[msg.sender], "!reporter");
-        isReporter[msg.sender] = true;
-        reporters[msg.sender] = Reporter(_name, _email, _phone, new uint[](0));
-    }
-    function followReporter(address _reporterAddress) external {
-        require(isReporter[_reporterAddress], "reporter !exists");
-        followingReporters[msg.sender][_reporterAddress] = true;
-    }
-    function addNews(string memory _title, string memory _content) external {
-        require(isReporter[msg.sender], "!reporter");
-        newsList.push(News(_title, _content, msg.sender));
-        reporters[msg.sender].newsIds.push(newsList.length - 1);
-    }
-    function getFollowingReporters(address _userAddress) external view returns(address[] memory) {
-        address[] memory following = new address[](0);
-        for (uint i = 0; i < newsList.length; i++) {
-            address reporterAddress = newsList[i].reporterAddress;
-            if (followingReporters[_userAddress][reporterAddress]) {
-                following = push(following, reporterAddress);
-            }
-        }
-        return following;
-    }
-    function push(address[] memory array, address item) internal pure returns (address[] memory) {
-        address[] memory newArray = new address[](array.length + 1);
-        for (uint i = 0; i < array.length; i++) {
-            newArray[i] = array[i];
-        }
-         newArray[array.length] = item;
-        return newArray;
+
+    function withdraw() external {
+        require(msg.sender == recipient, "Only recipient can withdraw");
+        (bool success, ) = recipient.call{value: address(this).balance}("");
+        require(success, "Withdrawal failed");
     }
 }
